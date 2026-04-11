@@ -405,30 +405,46 @@ let datenGeladen = false;
 async function ladeDaten() {
   if (!SHEETS_URL) return;
 
-  // CORS-Proxy: allorigins.win leitet die Anfrage serverseitig weiter
-  // → kein CORS-Problem egal ob file:// oder https://
-  const proxyUrl = "https://api.allorigins.win/raw?url=" + encodeURIComponent(SHEETS_URL);
+  // Mehrere Proxies als Fallback
+  const proxies = [
+    url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+    url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+    url => `https://thingproxy.freeboard.io/fetch/${url}`,
+  ];
 
-  try {
-    setStatus("⏳ Lade Veranstaltungsdaten…");
-    const r = await fetch(proxyUrl);
-    if (!r.ok) throw new Error("HTTP " + r.status);
-    const csv = await r.text();
+  setStatus("⏳ Lade Veranstaltungsdaten…");
 
-    if (!csv || csv.trim().length < 10) {
-      throw new Error("Leere Antwort – Sheets-URL prüfen");
+  for (let i = 0; i < proxies.length; i++) {
+    const proxyUrl = proxies[i](SHEETS_URL);
+    try {
+      console.log(`Proxy ${i+1} wird versucht:`, proxyUrl);
+      const r = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const csv = await r.text();
+
+      if (!csv || csv.trim().length < 10 || csv.includes("<html")) {
+        throw new Error("Ungültige Antwort");
+      }
+
+      eventDaten   = csvZuText(csv);
+      datenGeladen = true;
+
+      const anzahl = eventDaten.split("\n").filter(l => l.startsWith("•")).length;
+      setStatus(`✓ ${anzahl} Events geladen · ${new Date().toLocaleTimeString("de-AT")}`);
+      console.log("Daten geladen via Proxy", i+1);
+      return; // Erfolg → fertig
+
+    } catch (e) {
+      console.warn(`Proxy ${i+1} fehlgeschlagen:`, e.message);
+      if (i < proxies.length - 1) {
+        setStatus(`⏳ Proxy ${i+1} fehlgeschlagen, versuche nächsten…`);
+      }
     }
-
-    eventDaten   = csvZuText(csv);
-    datenGeladen = true;
-
-    const anzahl = eventDaten.split("\n").filter(l => l.startsWith("•")).length;
-    setStatus(`✓ ${anzahl} Events geladen · ${new Date().toLocaleTimeString("de-AT")}`);
-
-  } catch (e) {
-    setStatus("⚠ Fehler beim Laden: " + e.message);
-    console.error("Ladefehler:", e);
   }
+
+  // Alle Proxies fehlgeschlagen
+  setStatus("⚠ Daten konnten nicht geladen werden – siehe Console (F12)");
+  console.error("Alle Proxies fehlgeschlagen. Sheets-URL:", SHEETS_URL);
 }
 
 function csvZuText(csv) {
