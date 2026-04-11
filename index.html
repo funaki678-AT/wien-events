@@ -315,8 +315,9 @@
       <label>Google Sheets CSV-URL</label>
       <input type="text" id="inp-url" placeholder="https://docs.google.com/spreadsheets/d/.../pub?output=csv">
       <p class="hinweis">
-        Google Sheets → Datei → <strong>Im Web veröffentlichen</strong>
-        → Blatt: Events → Format: CSV → Veröffentlichen → Link kopieren.
+        Einfach die normale URL deines Google Sheets kopieren
+        (das Sheet muss öffentlich freigegeben sein: Teilen → Jeder mit dem Link).<br>
+        Oder die CSV-URL aus Datei → <strong>Im Web veröffentlichen</strong>.
       </p>
     </div>
 
@@ -379,8 +380,8 @@ function setupSpeichern() {
     err.style.display = "block";
     return;
   }
-  if (!url.includes("spreadsheets") || !url.includes("output=csv")) {
-    err.textContent = "⚠ URL ungültig – bitte die CSV-URL aus 'Im Web veröffentlichen' verwenden.";
+  if (!url.includes("spreadsheets")) {
+    err.textContent = "⚠ URL ungültig – muss eine Google Sheets URL sein.";
     err.style.display = "block";
     return;
   }
@@ -396,55 +397,98 @@ function setupSpeichern() {
 }
 
 // ═══════════════════════════════════════════════════════
-// DATEN LADEN
+// DATEN LADEN  –  Google Sheets JSON-API (kein Proxy nötig)
 // ═══════════════════════════════════════════════════════
 
 let eventDaten   = "";
 let datenGeladen = false;
 
+// Extrahiert die Spreadsheet-ID aus einer beliebigen Sheets-URL
+function extractSheetId(url) {
+  // Format 1: /spreadsheets/d/ID/...
+  let m = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+  if (m) return { id: m[1], typ: "normal" };
+  // Format 2: /spreadsheets/d/e/PUBLISHED_ID/pub (veröffentlichte Version)
+  m = url.match(/\/spreadsheets\/d\/e\/([a-zA-Z0-9_-]+)/);
+  if (m) return { id: m[1], typ: "published" };
+  return null;
+}
+
+function extractGid(url) {
+  const m = url.match(/gid=(\d+)/);
+  return m ? m[1] : "0";
+}
+
 async function ladeDaten() {
   if (!SHEETS_URL) return;
-
-  // Mehrere Proxies als Fallback
-  const proxies = [
-    url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
-    url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-    url => `https://thingproxy.freeboard.io/fetch/${url}`,
-  ];
-
   setStatus("⏳ Lade Veranstaltungsdaten…");
 
-  for (let i = 0; i < proxies.length; i++) {
-    const proxyUrl = proxies[i](SHEETS_URL);
+  // Methode 1: Google Visualization API (JSON, kein CORS-Problem)
+  // Funktioniert mit normalen Spreadsheet-IDs wenn das Sheet öffentlich ist
+  const parsed = extractSheetId(SHEETS_URL);
+  const gid    = extractGid(SHEETS_URL);
+
+  if (parsed && parsed.typ === "normal") {
     try {
-      console.log(`Proxy ${i+1} wird versucht:`, proxyUrl);
-      const r = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      const csv = await r.text();
-
-      if (!csv || csv.trim().length < 10 || csv.includes("<html")) {
-        throw new Error("Ungültige Antwort");
+      const jsonUrl = `https://docs.google.com/spreadsheets/d/${parsed.id}/gviz/tq?tqx=out:json&gid=${gid}`;
+      const r = await fetch(jsonUrl, { signal: AbortSignal.timeout(10000) });
+      if (r.ok) {
+        const text = await r.text();
+        // Google gibt JSONP zurück: google.visualization.Query.setResponse({...})
+        const jsonStr = text.replace(/^[^(]+\(/, "").replace(/\);?\s*$/, "");
+        const data = JSON.parse(jsonStr);
+        eventDaten   = gvizZuText(data);
+        datenGeladen = true;
+        const anzahl = eventDaten.split("\n").filter(l => l.startsWith("•")).length;
+        setStatus(`✓ ${anzahl} Events geladen · ${new Date().toLocaleTimeString("de-AT")}`);
+        console.log("Daten geladen via Google Visualization API");
+        return;
       }
-
-      eventDaten   = csvZuText(csv);
-      datenGeladen = true;
-
-      const anzahl = eventDaten.split("\n").filter(l => l.startsWith("•")).length;
-      setStatus(`✓ ${anzahl} Events geladen · ${new Date().toLocaleTimeString("de-AT")}`);
-      console.log("Daten geladen via Proxy", i+1);
-      return; // Erfolg → fertig
-
     } catch (e) {
-      console.warn(`Proxy ${i+1} fehlgeschlagen:`, e.message);
-      if (i < proxies.length - 1) {
-        setStatus(`⏳ Proxy ${i+1} fehlgeschlagen, versuche nächsten…`);
-      }
+      console.warn("Visualization API fehlgeschlagen:", e.message);
     }
   }
 
-  // Alle Proxies fehlgeschlagen
-  setStatus("⚠ Daten konnten nicht geladen werden – siehe Console (F12)");
-  console.error("Alle Proxies fehlgeschlagen. Sheets-URL:", SHEETS_URL);
+  // Methode 2: Direkte CSV-URL (funktioniert von https:// ohne Proxy)
+  // Bei veröffentlichten Sheets mit /d/e/ URL
+  try {
+    const r = await fetch(SHEETS_URL, { signal: AbortSignal.timeout(10000) });
+    if (r.ok) {
+      const csv = await r.text();
+      if (csv && csv.length > 10 && !csv.trim().startsWith("<")) {
+        eventDaten   = csvZuText(csv);
+        datenGeladen = true;
+        const anzahl = eventDaten.split("\n").filter(l => l.startsWith("•")).length;
+        setStatus(`✓ ${anzahl} Events geladen · ${new Date().toLocaleTimeString("de-AT")}`);
+        console.log("Daten geladen via direkter CSV-URL");
+        return;
+      }
+    }
+  } catch (e) {
+    console.warn("Direkte CSV fehlgeschlagen:", e.message);
+  }
+
+  setStatus("⚠ Laden fehlgeschlagen – bitte Sheets-URL in ⚙ Einstellungen prüfen");
+  console.error("Beide Methoden fehlgeschlagen. URL:", SHEETS_URL);
+}
+
+// Google Visualization JSON → Textformat
+function gvizZuText(data) {
+  const cols = data.table.cols.map(c => c.label);
+  const rows = data.table.rows || [];
+  return rows.map(row => {
+    const ev = {};
+    cols.forEach((k, i) => {
+      const cell = row.c[i];
+      ev[k] = cell ? (cell.f || cell.v || "") : "";
+    });
+    return (
+      `• ${ev["Name"]||"?"} | ${ev["Datum"]||"?"} | ${ev["Venue"]||"?"} | ` +
+      `${ev["Kategorie"]||""} | ${ev["Genre"]||""} | ` +
+      `${ev["Günstigster Preis (€)"] ? ev["Günstigster Preis (€)"]+" €" : "Preis unbekannt"} | ` +
+      `Quelle: ${ev["Datenquelle(n)"]||""}`
+    );
+  }).join("\n");
 }
 
 function csvZuText(csv) {
