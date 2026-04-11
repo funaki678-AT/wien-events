@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wien Events – Veranstaltungsassistent</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=DM+Sans:wght@300;400;500&display=swap');
+
+  :root {
+    --rot:    #c0392b;
+    --gold:   #d4a843;
+    --dunkel: #1a1208;
+    --mittel: #2d1f0e;
+    --hell:   #f5ede0;
+    --grau:   #8a7a6a;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--dunkel);
+    color: var(--hell);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  header {
+    padding: 1.5rem 2rem 1rem;
+    border-bottom: 1px solid rgba(212,168,67,0.2);
+    display: flex;
+    align-items: baseline;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+
+  header h1 {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.6rem;
+    color: var(--gold);
+    letter-spacing: 0.02em;
+  }
+
+  header span {
+    font-size: 0.8rem;
+    color: var(--grau);
+    font-weight: 300;
+  }
+
+  /* ── Setup-Overlay ── */
+  #setup-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(26,18,8,0.95);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+  }
+  #setup-overlay.aktiv { display: flex; }
+
+  #setup-box {
+    background: var(--mittel);
+    border: 1px solid rgba(212,168,67,0.3);
+    border-radius: 6px;
+    padding: 2rem;
+    width: 100%;
+    max-width: 520px;
+  }
+
+  #setup-box h2 {
+    font-family: 'Playfair Display', serif;
+    color: var(--gold);
+    font-size: 1.3rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .setup-feld { margin-bottom: 1.2rem; }
+
+  .setup-feld label {
+    display: block;
+    font-size: 0.82rem;
+    color: var(--grau);
+    margin-bottom: 0.4rem;
+  }
+
+  .setup-feld input {
+    width: 100%;
+    background: var(--dunkel);
+    border: 1px solid rgba(212,168,67,0.3);
+    color: var(--hell);
+    padding: 0.6rem 0.9rem;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.88rem;
+    border-radius: 3px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .setup-feld input:focus { border-color: var(--gold); }
+
+  .setup-feld .hinweis {
+    font-size: 0.75rem;
+    color: var(--grau);
+    margin-top: 0.35rem;
+    line-height: 1.5;
+  }
+
+  .setup-feld .hinweis a { color: var(--gold); }
+
+  #setup-speichern {
+    width: 100%;
+    background: var(--rot);
+    color: #fff;
+    border: none;
+    padding: 0.75rem;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.95rem;
+    font-weight: 500;
+    border-radius: 3px;
+    cursor: pointer;
+    margin-top: 0.5rem;
+    transition: opacity 0.15s;
+  }
+
+  #setup-speichern:hover { opacity: 0.85; }
+
+  #setup-fehler {
+    color: #e74c3c;
+    font-size: 0.82rem;
+    margin-top: 0.75rem;
+    display: none;
+  }
+
+  /* ── Chat ── */
+  #chat {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1.5rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    max-width: 780px;
+    width: 100%;
+    margin: 0 auto;
+  }
+
+  .msg {
+    max-width: 85%;
+    padding: 0.75rem 1rem;
+    border-radius: 4px;
+    font-size: 0.92rem;
+    line-height: 1.6;
+    animation: einblenden 0.25s ease;
+  }
+
+  @keyframes einblenden {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .msg.bot {
+    background: var(--mittel);
+    border-left: 3px solid var(--gold);
+    color: var(--hell);
+    align-self: flex-start;
+  }
+
+  .msg.user {
+    background: var(--rot);
+    color: #fff;
+    align-self: flex-end;
+  }
+
+  .msg.bot ul { padding-left: 1.2rem; margin-top: 0.4rem; }
+  .msg.bot li { margin-bottom: 0.3rem; }
+  .msg.bot strong { color: var(--gold); }
+  .msg.bot a { color: var(--gold); }
+
+  .tipp-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.6rem;
+  }
+
+  .tipp {
+    background: transparent;
+    border: 1px solid rgba(212,168,67,0.4);
+    color: var(--gold);
+    padding: 0.35rem 0.75rem;
+    border-radius: 2px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    font-family: 'DM Sans', sans-serif;
+    transition: background 0.15s;
+  }
+
+  .tipp:hover { background: rgba(212,168,67,0.12); }
+
+  .tipps-wrapper {
+    align-self: flex-start;
+    max-width: 85%;
+    animation: einblenden 0.25s ease;
+  }
+
+  /* ── Footer ── */
+  footer {
+    padding: 1rem;
+    border-top: 1px solid rgba(212,168,67,0.15);
+    max-width: 780px;
+    width: 100%;
+    margin: 0 auto;
+  }
+
+  #eingabe-form { display: flex; gap: 0.5rem; }
+
+  #eingabe {
+    flex: 1;
+    background: var(--mittel);
+    border: 1px solid rgba(212,168,67,0.3);
+    color: var(--hell);
+    padding: 0.7rem 1rem;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.9rem;
+    border-radius: 3px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  #eingabe:focus { border-color: var(--gold); }
+  #eingabe::placeholder { color: var(--grau); }
+
+  #senden {
+    background: var(--rot);
+    color: #fff;
+    border: none;
+    padding: 0.7rem 1.4rem;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.9rem;
+    font-weight: 500;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: opacity 0.15s;
+    white-space: nowrap;
+  }
+
+  #senden:hover { opacity: 0.85; }
+  #senden:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  #status-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 0.4rem;
+  }
+
+  #status-text {
+    font-size: 0.72rem;
+    color: var(--grau);
+  }
+
+  #einstellungen-btn {
+    font-size: 0.72rem;
+    color: var(--grau);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    font-family: 'DM Sans', sans-serif;
+    transition: color 0.15s;
+  }
+
+  #einstellungen-btn:hover { color: var(--gold); }
+
+  /* ── Ladeanimation ── */
+  .lade-dots span {
+    display: inline-block;
+    width: 6px; height: 6px;
+    background: var(--gold);
+    border-radius: 50%;
+    margin: 0 2px;
+    animation: hüpfen 1.2s infinite;
+  }
+  .lade-dots span:nth-child(2) { animation-delay: 0.2s; }
+  .lade-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+  @keyframes hüpfen {
+    0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
+    40%            { transform: translateY(-5px); opacity: 1; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ── Setup-Overlay ── -->
+<div id="setup-overlay">
+  <div id="setup-box">
+    <h2>⚙️ Einrichtung</h2>
+
+    <div class="setup-feld">
+      <label>Anthropic API Key</label>
+      <input type="password" id="inp-key" placeholder="sk-ant-api03-...">
+      <p class="hinweis">
+        Holen unter <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a>
+        → API Keys → Create Key.<br>
+        Wird nur lokal in deinem Browser gespeichert, nie übertragen.
+      </p>
+    </div>
+
+    <div class="setup-feld">
+      <label>Google Sheets CSV-URL</label>
+      <input type="text" id="inp-url" placeholder="https://docs.google.com/spreadsheets/d/.../pub?output=csv">
+      <p class="hinweis">
+        Google Sheets → Datei → <strong>Im Web veröffentlichen</strong>
+        → Blatt: Events → Format: CSV → Veröffentlichen → Link kopieren.
+      </p>
+    </div>
+
+    <button id="setup-speichern" onclick="setupSpeichern()">Speichern &amp; starten</button>
+    <div id="setup-fehler"></div>
+  </div>
+</div>
+
+<!-- ── Hauptlayout ── -->
+<header>
+  <h1>Wien Events</h1>
+  <span>Dein persönlicher Veranstaltungsassistent</span>
+</header>
+
+<div id="chat"></div>
+
+<footer>
+  <form id="eingabe-form">
+    <input id="eingabe" type="text"
+           placeholder="z.B. Konzerte nächstes Wochenende, günstige Events..."
+           autocomplete="off">
+    <button id="senden" type="submit">Senden</button>
+  </form>
+  <div id="status-bar">
+    <span id="status-text">Starte…</span>
+    <button id="einstellungen-btn" onclick="zeigeSetup()">⚙ Einstellungen</button>
+  </div>
+</footer>
+
+<script>
+// ═══════════════════════════════════════════════════════
+// KONFIGURATION  (aus localStorage)
+// ═══════════════════════════════════════════════════════
+
+let ANTHROPIC_KEY = localStorage.getItem("wien_key") || "";
+let SHEETS_URL    = localStorage.getItem("wien_csv") || "";
+
+// ═══════════════════════════════════════════════════════
+// SETUP
+// ═══════════════════════════════════════════════════════
+
+function zeigeSetup() {
+  document.getElementById("inp-key").value = ANTHROPIC_KEY;
+  document.getElementById("inp-url").value = SHEETS_URL;
+  document.getElementById("setup-fehler").style.display = "none";
+  document.getElementById("setup-overlay").classList.add("aktiv");
+}
+
+function versteckeSetup() {
+  document.getElementById("setup-overlay").classList.remove("aktiv");
+}
+
+function setupSpeichern() {
+  const key = document.getElementById("inp-key").value.trim();
+  const url  = document.getElementById("inp-url").value.trim();
+  const err  = document.getElementById("setup-fehler");
+
+  if (!key.startsWith("sk-ant-")) {
+    err.textContent = "⚠ API Key ungültig – muss mit 'sk-ant-' beginnen.";
+    err.style.display = "block";
+    return;
+  }
+  if (!url.includes("spreadsheets") || !url.includes("output=csv")) {
+    err.textContent = "⚠ URL ungültig – bitte die CSV-URL aus 'Im Web veröffentlichen' verwenden.";
+    err.style.display = "block";
+    return;
+  }
+
+  localStorage.setItem("wien_key", key);
+  localStorage.setItem("wien_csv", url);
+  ANTHROPIC_KEY = key;
+  SHEETS_URL    = url;
+
+  versteckeSetup();
+  setStatus("Lade Daten…");
+  ladeDaten();
+}
+
+// ═══════════════════════════════════════════════════════
+// DATEN LADEN
+// ═══════════════════════════════════════════════════════
+
+let eventDaten   = "";
+let datenGeladen = false;
+
+async function ladeDaten() {
+  if (!SHEETS_URL) return;
+
+  // CORS-Proxy: allorigins.win leitet die Anfrage serverseitig weiter
+  // → kein CORS-Problem egal ob file:// oder https://
+  const proxyUrl = "https://api.allorigins.win/raw?url=" + encodeURIComponent(SHEETS_URL);
+
+  try {
+    setStatus("⏳ Lade Veranstaltungsdaten…");
+    const r = await fetch(proxyUrl);
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const csv = await r.text();
+
+    if (!csv || csv.trim().length < 10) {
+      throw new Error("Leere Antwort – Sheets-URL prüfen");
+    }
+
+    eventDaten   = csvZuText(csv);
+    datenGeladen = true;
+
+    const anzahl = eventDaten.split("\n").filter(l => l.startsWith("•")).length;
+    setStatus(`✓ ${anzahl} Events geladen · ${new Date().toLocaleTimeString("de-AT")}`);
+
+  } catch (e) {
+    setStatus("⚠ Fehler beim Laden: " + e.message);
+    console.error("Ladefehler:", e);
+  }
+}
+
+function csvZuText(csv) {
+  const zeilen = csv.trim().split("\n");
+  if (zeilen.length < 2) return "";
+
+  function parseZeile(z) {
+    const f = []; let feld = ""; let anf = false;
+    for (let i = 0; i < z.length; i++) {
+      const c = z[i];
+      if (c === '"') {
+        if (anf && z[i+1] === '"') { feld += '"'; i++; }
+        else anf = !anf;
+      } else if (c === ',' && !anf) { f.push(feld.trim()); feld = ""; }
+      else feld += c;
+    }
+    f.push(feld.trim());
+    return f;
+  }
+
+  const kopf   = parseZeile(zeilen[0]);
+  const events = [];
+
+  for (let i = 1; i < zeilen.length; i++) {
+    const f = parseZeile(zeilen[i]);
+    if (f.length < 3) continue;
+    const ev = {};
+    kopf.forEach((k, idx) => { ev[k] = f[idx] || ""; });
+    events.push(ev);
+  }
+
+  return events.map(ev =>
+    `• ${ev["Name"]||"?"} | ${ev["Datum"]||"?"} | ${ev["Venue"]||"?"} | ` +
+    `${ev["Kategorie"]||""} | ${ev["Genre"]||""} | ` +
+    `${ev["Günstigster Preis (€)"] ? ev["Günstigster Preis (€)"]+" €" : "Preis unbekannt"} | ` +
+    `Quelle: ${ev["Datenquelle(n)"]||""}`
+  ).join("\n");
+}
+
+// ═══════════════════════════════════════════════════════
+// CHAT
+// ═══════════════════════════════════════════════════════
+
+const chatEl    = document.getElementById("chat");
+const eingabeEl = document.getElementById("eingabe");
+const sendenEl  = document.getElementById("senden");
+
+const TIPPS = [
+  "Was läuft nächstes Wochenende?",
+  "Konzerte diese Woche",
+  "Günstige Events unter 20 €",
+  "Rock und Metal Konzerte",
+  "Was ist heute Abend los?",
+  "Konzerte im Mai",
+];
+
+function setStatus(text) {
+  document.getElementById("status-text").textContent = text;
+}
+
+function addMsg(html, typ) {
+  const d = document.createElement("div");
+  d.className = "msg " + typ;
+  d.innerHTML = html;
+  chatEl.appendChild(d);
+  chatEl.scrollTop = chatEl.scrollHeight;
+  return d;
+}
+
+function addLade() {
+  const d = document.createElement("div");
+  d.className = "msg bot lade-dots";
+  d.innerHTML = "<span></span><span></span><span></span>";
+  chatEl.appendChild(d);
+  chatEl.scrollTop = chatEl.scrollHeight;
+  return d;
+}
+
+function addTipps() {
+  const w = document.createElement("div");
+  w.className = "tipps-wrapper";
+  const g = document.createElement("div");
+  g.className = "tipp-grid";
+  TIPPS.forEach(t => {
+    const b = document.createElement("button");
+    b.className = "tipp"; b.textContent = t;
+    b.onclick = () => { eingabeEl.value = t; absenden(); };
+    g.appendChild(b);
+  });
+  w.appendChild(g);
+  chatEl.appendChild(w);
+  chatEl.scrollTop = chatEl.scrollHeight;
+}
+
+function heuteInfo() {
+  const h = new Date();
+  const wt = ["Sonntag","Montag","Dienstag","Mittwoch","Donnerstag","Freitag","Samstag"];
+  const mo = ["Januar","Februar","März","April","Mai","Juni",
+               "Juli","August","September","Oktober","November","Dezember"];
+  return `Heute ist ${wt[h.getDay()]}, der ${h.getDate()}. ${mo[h.getMonth()]} ${h.getFullYear()}.`;
+}
+
+let konversation = [];
+
+async function frageClaude(frage) {
+  const system =
+    `Du bist ein freundlicher Wiener Veranstaltungsassistent.\n` +
+    `${heuteInfo()}\n` +
+    `Beantworte Fragen auf Deutsch basierend auf den Veranstaltungsdaten.\n` +
+    `Formatiere mit Aufzählungspunkten wenn mehrere Events relevant sind.\n` +
+    `Zeige: **Name**, Datum, Venue, Preis (falls vorhanden).\n` +
+    `Erfinde KEINE Events. Wenn keine passen, sage das ehrlich.\n\n` +
+    `VERANSTALTUNGSDATEN (${new Date().toLocaleDateString("de-AT")}):\n` +
+    (eventDaten || "Keine Daten verfügbar.");
+
+  konversation.push({ role: "user", content: frage });
+
+  const resp = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": ANTHROPIC_KEY,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true"
+    },
+    body: JSON.stringify({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 1024,
+      system,
+      messages: konversation
+    })
+  });
+
+  if (!resp.ok) {
+    const e = await resp.json();
+    konversation.pop();
+    throw new Error(e.error?.message || "API Fehler " + resp.status);
+  }
+
+  const data   = await resp.json();
+  const text   = data.content?.[0]?.text || "Keine Antwort.";
+  konversation.push({ role: "assistant", content: text });
+
+  // Max. 20 Nachrichten im Verlauf behalten
+  if (konversation.length > 20) konversation = konversation.slice(-20);
+
+  return text;
+}
+
+function mdZuHtml(t) {
+  return t
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*(.+?)\*/g,     "<em>$1</em>")
+    .replace(/^[•\-] (.+)$/gm, "<li>$1</li>")
+    .replace(/(<li>.*<\/li>\n?)+/g, m => `<ul>${m}</ul>`)
+    .replace(/\n\n/g, "<br><br>")
+    .replace(/\n/g,   "<br>");
+}
+
+async function absenden() {
+  const frage = eingabeEl.value.trim();
+  if (!frage) return;
+
+  if (!ANTHROPIC_KEY) { zeigeSetup(); return; }
+
+  eingabeEl.value  = "";
+  sendenEl.disabled = true;
+  addMsg(frage, "user");
+
+  if (!datenGeladen) {
+    addMsg("⏳ Daten laden noch – bitte gleich nochmal senden.", "bot");
+    sendenEl.disabled = false;
+    return;
+  }
+
+  const lade = addLade();
+  try {
+    const antwort = await frageClaude(frage);
+    lade.remove();
+    addMsg(mdZuHtml(antwort), "bot");
+  } catch (e) {
+    lade.remove();
+    let msg = "⚠ " + e.message;
+    if (e.message.includes("401"))
+      msg += "<br><small>→ API Key ungültig. <button style='color:var(--gold);background:none;border:none;cursor:pointer;font-size:inherit' onclick='zeigeSetup()'>Key ändern</button></small>";
+    addMsg(msg, "bot");
+  }
+
+  sendenEl.disabled = false;
+  eingabeEl.focus();
+}
+
+document.getElementById("eingabe-form").addEventListener("submit", e => {
+  e.preventDefault(); absenden();
+});
+
+// ═══════════════════════════════════════════════════════
+// START
+// ═══════════════════════════════════════════════════════
+
+if (!ANTHROPIC_KEY || !SHEETS_URL) {
+  zeigeSetup();
+  setStatus("⚙ Bitte zuerst einrichten");
+} else {
+  ladeDaten();
+}
+
+addMsg(
+  "Grüß Gott! 👋 Ich bin dein Wien-Veranstaltungsassistent.<br>" +
+  "Frag mich nach Konzerten, günstigen Events oder einem bestimmten Genre.<br><br>" +
+  "Ein paar Vorschläge:",
+  "bot"
+);
+addTipps();
+</script>
+</body>
+</html>
