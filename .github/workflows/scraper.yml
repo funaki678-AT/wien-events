@@ -1,0 +1,53 @@
+name: Wien Events Scraper
+
+on:
+  schedule:
+    - cron: '0 6 * * *'  # Täglich um 07:00 Uhr Wiener Zeit (06:00 UTC)
+  workflow_dispatch:       # Manuell auslösbar über GitHub UI
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v4
+
+      - name: Python einrichten
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Abhängigkeiten installieren
+        run: |
+          pip install requests beautifulsoup4 gspread google-auth
+
+      - name: Google Credentials schreiben
+        run: |
+          echo '${{ secrets.GOOGLE_CREDENTIALS }}' > google_credentials.json
+
+      - name: Spotify Künstler-Cache kopieren
+        run: |
+          if [ -f spotify_kuenstler.txt ]; then
+            echo "spotify_kuenstler.txt gefunden"
+          else
+            echo "Keine spotify_kuenstler.txt — Spotify-Abgleich wird übersprungen"
+            touch spotify_kuenstler.txt
+          fi
+
+      - name: Scraper ausführen
+        env:
+          EMAIL_PASSWORT:       ${{ secrets.EMAIL_PASSWORT }}
+          TELEGRAM_TOKEN:       ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID:     ${{ secrets.TELEGRAM_CHAT_ID }}
+          SPOTIFY_CLIENT_ID:    ${{ secrets.SPOTIFY_CLIENT_ID }}
+          SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
+        run: |
+          python wien_events_scraper.py
+
+      - name: Log ausgeben
+        if: always()
+        run: |
+          if [ -f wien_scraper.log ]; then
+            tail -50 wien_scraper.log
+          fi
