@@ -914,13 +914,8 @@ def main():
         log.warning("Keine Events gefunden.")
         return
 
-    # Spotify-Abgleich
+    # Spotify-Künstler laden
     spotify_kuenstler = hole_spotify_kuenstler()
-    spotify_matches   = pruefe_spotify_matches(alle, spotify_kuenstler)
-    if spotify_matches:
-        log.info(f"\n🎵 {len(spotify_matches)} Spotify-Matches gefunden!")
-    else:
-        log.info("\n🎵 Keine Spotify-Matches.")
 
     # Google Sheets
     log.info("\n☁️  Verbinde mit Google Sheets...")
@@ -934,6 +929,13 @@ def main():
     except Exception as e:
         log.error(f"Google Sheets Fehler: {e}")
         return
+
+    # Spotify-Abgleich nur mit NEUEN Events
+    spotify_matches = pruefe_spotify_matches(neue_events, spotify_kuenstler)
+    if spotify_matches:
+        log.info(f"\n🎵 {len(spotify_matches)} Spotify-Matches gefunden!")
+    else:
+        log.info("\n🎵 Keine neuen Spotify-Matches.")
 
     # Telegram für Spotify-Matches
     if spotify_matches:
